@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        html, body { width: 100vw; height: 100vh; margin: 0; padding: 0; overflow: hidden; background: transparent; }
+        
+        .widget-wrapper {
+            position: absolute;
+            top: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transform-origin: top center;
+            will-change: transform;
+            outline: none !important;
+            border: none !important;
+            pointer-events: none; /* Root ignores events */
+        }
+
+        .widget-image {
+            pointer-events: none;
+            user-select: none;
+            display: block;
+        }
+
+        .thread-hitbox {
+            position: absolute;
+            top: 0;
+            width: 30px;
+            height: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: pointer;
+            z-index: 10;
+            pointer-events: auto; /* Hitboxes catch events */
+            background: transparent; /* Invisible */
+        }
+
+        .object-hitbox {
+            position: absolute;
+            bottom: 5px;
+            width: 70%;
+            height: 45%;
+            left: 15%;
+            cursor: pointer;
+            z-index: 10;
+            pointer-events: auto; /* Hitboxes catch events */
+            background: transparent; /* Invisible */
+        }
+
+        .repositioning .thread-hitbox { cursor: grabbing; }
+        .swinging .object-hitbox { cursor: grabbing; }
+    </style>
+</head>
+<body>
+    <div id="desktop-layer"></div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        // Physics constants
+        const GRAVITY = 0.002;
+        const DAMPING = 0.994;
+        const IDLE_AMPLITUDE = 5 * (Math.PI / 180); // 5 degrees
+        const IDLE_SPEED = 0.02;
+        const MAX_SWING_ANGLE = 75 * (Math.PI / 180);
+        const SWING_SENSITIVITY = 0.01;
+
+        const activeWidgets = new Map();
+
+        function animate() {
+            for (const [id, state] of activeWidgets.entries()) {
+                if (state.isInteractingSwing) {
+                    // Angular velocity is preserved dynamically during drag for smooth release
+                    state.angularVelocity = state.angle - state.lastAngle;
+                    state.lastAngle = state.angle;
+                } else {
+                    // Pendulum physics
+                    const acceleration = -GRAVITY * Math.sin(state.angle);
+                    state.angularVelocity += acceleration;
+                    state.angularVelocity *= DAMPING;
+                    state.angle += state.angularVelocity;
+                    state.lastAngle = state.angle;
+                    
+                    // Transition to idle when energy is low
+                    if (Math.abs(state.angle) < IDLE_AMPLITUDE && Math.abs(state.angularVelocity) < 0.001) {
+                        state.idlePhase += IDLE_SPEED;
+                        // Blend into idle smoothly
+                        state.angle = IDLE_AMPLITUDE * Math.sin(state.idlePhase);
+                        state.angularVelocity = 0;
+                    }
+                }
+
+                // Apply rotation
+                if (state.element) {
+                    state.element.style.transform = `rotate(${state.angle}rad)`;
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+        
+        requestAnimationFrame(animate);
+
+        ipcRenderer.on('sync-widgets', (event, widgets) => {
+            const container = document.getElementById('desktop-layer');
+            
+            const currentIds = new Set(widgets.map(w => w.widgetId));
+            for (const id of activeWidgets.keys()) {
+                if (!currentIds.has(id)) {
+                    const el = document.getElementById('widget-' + id);
+                    if (el) el.remove();
+                    activeWidgets.delete(id);
+                }
+            }
+            
+            widgets.forEach(widget => {
+                if (activeWidgets.has(widget.widgetId)) {
+                    const state = activeWidgets.get(widget.widgetId);
+                    if (!state.isRepositioning) {
+                        state.element.style.left = widget.position?.x || '90%';
+                    }
+                    return;
+                }
+
+                // Create new
+                const wrapper = document.createElement('div');
+                wrapper.className = 'widget-wrapper';
+                wrapper.id = 'widget-' + widget.widgetId;
+                
+                wrapper.style.left = widget.position?.x || '90%';
+                
+                let width = '100px';
+                if(widget.size === 'small') width = '70px';
+                if(widget.size === 'large') width = '150px';
+                
+                const img = document.createElement('img');
+                img.className = 'widget-image';
+                img.src = widget.assetUrl;
+                img.style.width = width;
+                
+                const threadHitbox = document.createElement('div');
+                threadHitbox.className = 'thread-hitbox';
+                threadHitbox.title = 'Double-click and drag to move';
+                
+                const objectHitbox = document.createElement('div');
+                objectHitbox.className = 'object-hitbox';
+                objectHitbox.title = 'Double-click and drag to swing';
+
+                wrapper.appendChild(img);
+                wrapper.appendChild(threadHitbox);
+                wrapper.appendChild(objectHitbox);
+                container.appendChild(wrapper);
+                
+                // Toggle ignoreMouseEvents
+                const onMouseEnter = () => ipcRenderer.send('set-ignore-mouse-events', false);
+                const onMouseLeave = () => ipcRenderer.send('set-ignore-mouse-events', true, { forward: true });
+                
+                threadHitbox.addEventListener('mouseenter', onMouseEnter);
+                threadHitbox.addEventListener('mouseleave', onMouseLeave);
+                objectHitbox.addEventListener('mouseenter', onMouseEnter);
+                objectHitbox.addEventListener('mouseleave', onMouseLeave);
+
+                const state = {
+                    element: wrapper,
+                    angle: 0,
+                    lastAngle: 0,
+                    angularVelocity: 0,
+                    idlePhase: Math.random() * Math.PI * 2,
+                    isRepositioning: false,
+                    isInteractingSwing: false
+                };
+                
+                activeWidgets.set(widget.widgetId, state);
+
+                wrapper.ondragstart = () => false;
+
+                // --- REPOSITIONING (TOP THREAD) ---
+                let clickCountThread = 0;
+                let clickTimeoutThread;
+                let startX = 0;
+                let originalLeft = 0;
+
+                threadHitbox.addEventListener('pointerdown', (e) => {
+                    e.stopPropagation();
+                    clickCountThread++;
+                    if (clickCountThread >= 2) {
+                        clearTimeout(clickTimeoutThread);
+                        clickCountThread = 0;
+                        state.isRepositioning = true;
+                        wrapper.classList.add('repositioning');
+                        threadHitbox.setPointerCapture(e.pointerId);
+                        
+                        startX = e.clientX;
+                        originalLeft = wrapper.getBoundingClientRect().left;
+                    } else {
+                        clickTimeoutThread = setTimeout(() => { clickCountThread = 0; }, 350);
+                    }
+                });
+
+                threadHitbox.addEventListener('pointermove', (e) => {
+                    if (!state.isRepositioning) return;
+                    e.stopPropagation();
+                    
+                    let newLeft = originalLeft + (e.clientX - startX);
+                    const maxLeft = window.innerWidth - wrapper.offsetWidth;
+                    if (newLeft < 0) newLeft = 0;
+                    if (newLeft > maxLeft) newLeft = maxLeft;
+                    
+                    wrapper.style.left = newLeft + 'px';
+                });
+
+                const endReposition = (e) => {
+                    if (!state.isRepositioning) return;
+                    state.isRepositioning = false;
+                    wrapper.classList.remove('repositioning');
+                    threadHitbox.releasePointerCapture(e.pointerId);
+                    
+                    const rect = wrapper.getBoundingClientRect();
+                    const percentX = (rect.left / window.innerWidth) * 100;
+                    wrapper.style.left = percentX + '%';
+                    
+                    ipcRenderer.send('update-position', { widgetId: widget.widgetId, x: percentX + '%' });
+                };
+
+                threadHitbox.addEventListener('pointerup', endReposition);
+                threadHitbox.addEventListener('pointercancel', endReposition);
+
+                // --- SWINGING (HANGING OBJECT) ---
+                let clickCountObject = 0;
+                let clickTimeoutObject;
+                let swingStartX = 0;
+                let initialAngle = 0;
+
+                objectHitbox.addEventListener('pointerdown', (e) => {
+                    e.stopPropagation();
+                    clickCountObject++;
+                    if (clickCountObject >= 2) {
+                        clearTimeout(clickTimeoutObject);
+                        clickCountObject = 0;
+                        state.isInteractingSwing = true;
+                        wrapper.classList.add('swinging');
+                        objectHitbox.setPointerCapture(e.pointerId);
+                        
+                        swingStartX = e.clientX;
+                        initialAngle = state.angle;
+                    } else {
+                        clickTimeoutObject = setTimeout(() => { clickCountObject = 0; }, 350);
+                    }
+                });
+
+                objectHitbox.addEventListener('pointermove', (e) => {
+                    if (!state.isInteractingSwing) return;
+                    e.stopPropagation();
+                    
+                    const deltaX = e.clientX - swingStartX;
+                    let targetAngle = initialAngle + (deltaX * SWING_SENSITIVITY);
+                    
+                    if (targetAngle > MAX_SWING_ANGLE) targetAngle = MAX_SWING_ANGLE;
+                    if (targetAngle < -MAX_SWING_ANGLE) targetAngle = -MAX_SWING_ANGLE;
+                    
+                    state.angle = targetAngle;
+                });
+
+                const endSwing = (e) => {
+                    if (!state.isInteractingSwing) return;
+                    state.isInteractingSwing = false;
+                    wrapper.classList.remove('swinging');
+                    objectHitbox.releasePointerCapture(e.pointerId);
+                };
+
+                objectHitbox.addEventListener('pointerup', endSwing);
+                objectHitbox.addEventListener('pointercancel', endSwing);
+
+            });
+        });
+    </script>
+</body>
+</html>
