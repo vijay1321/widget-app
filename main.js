@@ -75,7 +75,7 @@ async function startSync() {
 
     isSyncing = true;
     try {
-        const res = await axios.get(`${API_BASE_URL}/device/widgets`, {
+        const res = await axios.get(`${API_BASE_URL}/api/device/widgets`, {
             headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -121,7 +121,7 @@ ipcMain.on('update-position', async (event, data) => {
     const token = store.get('token');
     if (!token) return;
     try {
-        await axios.patch(`${API_BASE_URL}/device/widgets/${data.widgetId}/position`, 
+        await axios.patch(`${API_BASE_URL}/api/device/widgets/${data.widgetId}/position`, 
             { x: data.x },
             { headers: { Authorization: `Bearer ${token}` } }
         );

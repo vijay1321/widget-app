@@ -39,7 +39,7 @@
             const errorDiv = document.getElementById('error');
             
             try {
-                const res = await axios.post(`${API_BASE_URL}/auth/login`, { email, password });
+                const res = await axios.post(`${API_BASE_URL}/api/auth/login`, { email, password });
                 ipcRenderer.send('login-success', res.data.token);
             } catch (err) {
                 errorDiv.innerText = err.response?.data?.message || 'Login failed. Check API connection.';

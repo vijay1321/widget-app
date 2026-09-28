@@ -10,7 +10,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:5000/api';
+const { API_BASE_URL } = require('./src/config/api');
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
 let mainWindow;
@@ -76,7 +76,7 @@ async function startSync() {
     if (!token) return;
 
     try {
-        const res = await axios.get(\`\${API_BASE_URL}/device/widgets\`, {
+        const res = await axios.get(\`\${API_BASE_URL}/api/device/widgets\`, {
             headers: { Authorization: \`Bearer \${token}\` }
         });
         
@@ -205,7 +205,7 @@ app.on('window-all-closed', () => {
     <script>
         const { ipcRenderer } = require('electron');
         const axios = require('axios');
-        let API_BASE_URL = 'http://localhost:5000/api';
+        let { API_BASE_URL } = require('./src/config/api');
 
         ipcRenderer.on('api-url', (event, url) => {
             API_BASE_URL = url;
@@ -218,7 +218,7 @@ app.on('window-all-closed', () => {
             const errorDiv = document.getElementById('error');
             
             try {
-                const res = await axios.post(\`\${API_BASE_URL}/auth/login\`, { email, password });
+                const res = await axios.post(\`\${API_BASE_URL}/api/auth/login\`, { email, password });
                 ipcRenderer.send('login-success', res.data.token);
             } catch (err) {
                 errorDiv.innerText = err.response?.data?.message || 'Login failed. Check API connection.';
@@ -228,8 +228,8 @@ app.on('window-all-closed', () => {
 </body>
 </html>`,
 
-    '.env': `API_BASE_URL=http://localhost:5000/api`,
-    '.env.example': `API_BASE_URL=https://your-backend-url.onrender.com/api`
+    '.env': ``,
+    '.env.example': ``
 };
 
 for (const [filepath, content] of Object.entries(files)) {
