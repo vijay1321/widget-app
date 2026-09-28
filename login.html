@@ -26,7 +26,7 @@
     <script>
         const { ipcRenderer } = require('electron');
         const axios = require('axios');
-        let API_BASE_URL = 'http://localhost:5000/api';
+        let { API_BASE_URL } = require('./src/config/api');
 
         ipcRenderer.on('api-url', (event, url) => {
             API_BASE_URL = url;

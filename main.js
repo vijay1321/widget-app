@@ -6,7 +6,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:5000/api';
+const { API_BASE_URL } = require('./src/config/api');
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
 let mainWindow;
@@ -67,10 +67,13 @@ function createMainWindow() {
     mainWindow.loadFile('index.html');
 }
 
+let isSyncing = false;
 async function startSync() {
+    if (isSyncing) return;
     const token = store.get('token');
     if (!token) return;
 
+    isSyncing = true;
     try {
         const res = await axios.get(`${API_BASE_URL}/device/widgets`, {
             headers: { Authorization: `Bearer ${token}` }
@@ -82,9 +85,12 @@ async function startSync() {
     } catch (error) {
         if (error.response && error.response.status === 401) {
             store.set('token', null);
+            if (syncInterval) clearInterval(syncInterval);
             if (mainWindow) mainWindow.close();
             createLoginWindow();
         }
+    } finally {
+        isSyncing = false;
     }
 }
 
@@ -107,6 +113,7 @@ ipcMain.on('login-success', (event, token) => {
     }
     createMainWindow();
     startSync();
+    if (syncInterval) clearInterval(syncInterval);
     syncInterval = setInterval(startSync, 5000);
 });
 
