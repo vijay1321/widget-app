@@ -4,8 +4,18 @@ const fs = require('fs');
 const axios = require('axios');
 
 const { BASE_URL } = require('./src/config/api');
-console.log(`[API] BASE_URL = ${BASE_URL}`);
-const configPath = path.join(app.getPath('userData'), 'config.json');
+let logPath = null;
+
+function logToFile(msg) {
+    if (!logPath) {
+        try { logPath = path.join(app.getPath('userData'), 'debug.log'); } catch (e) { return; }
+    }
+    try { fs.appendFileSync(logPath, msg + '\n'); } catch (e) {}
+}
+
+try {
+    logToFile(`[API] BASE_URL = ${BASE_URL}`);
+} catch (e) {}
 
 let mainWindow;
 let loginWindow;
@@ -14,10 +24,11 @@ let syncInterval;
 // Simple store
 const store = {
     get: (key) => {
-        try { return JSON.parse(fs.readFileSync(configPath))[key]; } catch(e) { return null; }
+        try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'config.json')))[key]; } catch(e) { return null; }
     },
     set: (key, value) => {
         let data = {};
+        const configPath = path.join(app.getPath('userData'), 'config.json');
         try { data = JSON.parse(fs.readFileSync(configPath)); } catch(e) {}
         data[key] = value;
         fs.writeFileSync(configPath, JSON.stringify(data));
@@ -35,7 +46,13 @@ function createLoginWindow() {
         },
         autoHideMenuBar: true
     });
-    loginWindow.loadFile('login.html');
+    logToFile('[Widgetly] Creating window (login)');
+    loginWindow.loadFile(path.join(__dirname, 'login.html')).then(() => {
+        logToFile('[Widgetly] Renderer loaded (login.html)');
+        logToFile('[Widgetly] Production path being loaded: ' + path.join(__dirname, 'login.html'));
+    }).catch(e => {
+        logToFile('[Widgetly] Renderer failed (login.html): ' + e.message);
+    });
     
     // Pass API URL to renderer
     loginWindow.webContents.on('did-finish-load', () => {
@@ -62,7 +79,13 @@ function createMainWindow() {
     });
 
     mainWindow.setIgnoreMouseEvents(true, { forward: true });
-    mainWindow.loadFile('index.html');
+    logToFile('[Widgetly] Creating window (main)');
+    mainWindow.loadFile(path.join(__dirname, 'index.html')).then(() => {
+        logToFile('[Widgetly] Renderer loaded (index.html)');
+        logToFile('[Widgetly] Production path being loaded: ' + path.join(__dirname, 'index.html'));
+    }).catch(e => {
+        logToFile('[Widgetly] Renderer failed (index.html): ' + e.message);
+    });
 }
 
 let isSyncing = false;
@@ -73,14 +96,14 @@ async function startSync() {
 
     isSyncing = true;
     try {
-        console.log(`[API] Fetching widgets...`);
+        logToFile(`[API] Fetching widgets...`);
         const res = await axios.get(`${BASE_URL}/api/device/widgets`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        console.log(`[API] Response status = ${res.status}`);
-        console.log(`[API] Widget count = ${res.data.widgets ? res.data.widgets.length : 0}`);
+        logToFile(`[API] Response status = ${res.status}`);
+        logToFile(`[API] Widget count = ${res.data.widgets ? res.data.widgets.length : 0}`);
         if (res.data.widgets && res.data.widgets.length > 0) {
-            console.log(`[API] First widget assetUrl = ${res.data.widgets[0].assetUrl}`);
+            logToFile(`[API] First widget assetUrl = ${res.data.widgets[0].assetUrl}`);
         }
         
         if (mainWindow && !mainWindow.isDestroyed()) {
@@ -93,7 +116,7 @@ async function startSync() {
             if (mainWindow) mainWindow.close();
             createLoginWindow();
         } else {
-            console.error('[API] Error fetching widgets:', error.message);
+            logToFile('[API] Error fetching widgets: ' + error.message);
         }
     } finally {
         isSyncing = false;
@@ -101,10 +124,14 @@ async function startSync() {
 }
 
 app.whenReady().then(() => {
+    logToFile('====================================');
+    logToFile('[Widgetly] Electron starting');
     const token = store.get('token');
     if (!token) {
+        logToFile('[Widgetly] No token found, opening login window');
         createLoginWindow();
     } else {
+        logToFile('[Widgetly] Token found, starting sync and main window');
         createMainWindow();
         startSync();
         syncInterval = setInterval(startSync, 5000); // Sync every 5 seconds
