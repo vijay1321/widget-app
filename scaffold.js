@@ -6,9 +6,6 @@ const files = {
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
-const dotenv = require('dotenv');
-
-dotenv.config();
 
 const { BASE_URL } = require('./src/config/api');
 const configPath = path.join(app.getPath('userData'), 'config.json');

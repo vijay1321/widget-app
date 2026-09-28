@@ -2,11 +2,9 @@ const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
-const dotenv = require('dotenv');
-
-dotenv.config();
 
 const { BASE_URL } = require('./src/config/api');
+console.log(`[API] BASE_URL = ${BASE_URL}`);
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
 let mainWindow;
@@ -75,9 +73,15 @@ async function startSync() {
 
     isSyncing = true;
     try {
+        console.log(`[API] Fetching widgets...`);
         const res = await axios.get(`${BASE_URL}/api/device/widgets`, {
             headers: { Authorization: `Bearer ${token}` }
         });
+        console.log(`[API] Response status = ${res.status}`);
+        console.log(`[API] Widget count = ${res.data.widgets ? res.data.widgets.length : 0}`);
+        if (res.data.widgets && res.data.widgets.length > 0) {
+            console.log(`[API] First widget assetUrl = ${res.data.widgets[0].assetUrl}`);
+        }
         
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('sync-widgets', res.data.widgets);
@@ -88,6 +92,8 @@ async function startSync() {
             if (syncInterval) clearInterval(syncInterval);
             if (mainWindow) mainWindow.close();
             createLoginWindow();
+        } else {
+            console.error('[API] Error fetching widgets:', error.message);
         }
     } finally {
         isSyncing = false;
