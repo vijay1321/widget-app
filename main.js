@@ -6,7 +6,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-const { API_BASE_URL } = require('./src/config/api');
+const { BASE_URL } = require('./src/config/api');
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
 let mainWindow;
@@ -41,7 +41,7 @@ function createLoginWindow() {
     
     // Pass API URL to renderer
     loginWindow.webContents.on('did-finish-load', () => {
-        loginWindow.webContents.send('api-url', API_BASE_URL);
+        loginWindow.webContents.send('api-url', BASE_URL);
     });
 }
 
@@ -75,7 +75,7 @@ async function startSync() {
 
     isSyncing = true;
     try {
-        const res = await axios.get(`${API_BASE_URL}/api/device/widgets`, {
+        const res = await axios.get(`${BASE_URL}/api/device/widgets`, {
             headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -121,7 +121,7 @@ ipcMain.on('update-position', async (event, data) => {
     const token = store.get('token');
     if (!token) return;
     try {
-        await axios.patch(`${API_BASE_URL}/api/device/widgets/${data.widgetId}/position`, 
+        await axios.patch(`${BASE_URL}/api/device/widgets/${data.widgetId}/position`, 
             { x: data.x },
             { headers: { Authorization: `Bearer ${token}` } }
         );

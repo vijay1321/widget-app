@@ -10,7 +10,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-const { API_BASE_URL } = require('./src/config/api');
+const { BASE_URL } = require('./src/config/api');
 const configPath = path.join(app.getPath('userData'), 'config.json');
 
 let mainWindow;
@@ -45,7 +45,7 @@ function createLoginWindow() {
     
     // Pass API URL to renderer
     loginWindow.webContents.on('did-finish-load', () => {
-        loginWindow.webContents.send('api-url', API_BASE_URL);
+        loginWindow.webContents.send('api-url', BASE_URL);
     });
 }
 
@@ -76,7 +76,7 @@ async function startSync() {
     if (!token) return;
 
     try {
-        const res = await axios.get(\`\${API_BASE_URL}/api/device/widgets\`, {
+        const res = await axios.get(\`\${BASE_URL}/api/device/widgets\`, {
             headers: { Authorization: \`Bearer \${token}\` }
         });
         
@@ -205,10 +205,10 @@ app.on('window-all-closed', () => {
     <script>
         const { ipcRenderer } = require('electron');
         const axios = require('axios');
-        let { API_BASE_URL } = require('./src/config/api');
+        let { BASE_URL } = require('./src/config/api');
 
         ipcRenderer.on('api-url', (event, url) => {
-            API_BASE_URL = url;
+            BASE_URL = url;
         });
 
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -218,7 +218,7 @@ app.on('window-all-closed', () => {
             const errorDiv = document.getElementById('error');
             
             try {
-                const res = await axios.post(\`\${API_BASE_URL}/api/auth/login\`, { email, password });
+                const res = await axios.post(\`\${BASE_URL}/api/auth/login\`, { email, password });
                 ipcRenderer.send('login-success', res.data.token);
             } catch (err) {
                 errorDiv.innerText = err.response?.data?.message || 'Login failed. Check API connection.';
