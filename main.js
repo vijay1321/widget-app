@@ -13,6 +13,13 @@ function logToFile(msg) {
     try { fs.appendFileSync(logPath, msg + '\n'); } catch (e) {}
 }
 
+process.on('uncaughtException', (err) => {
+    logToFile('[Widgetly] Main process error: uncaughtException - ' + err.message);
+});
+process.on('unhandledRejection', (reason) => {
+    logToFile('[Widgetly] Main process error: unhandledRejection - ' + reason);
+});
+
 try {
     logToFile(`[API] BASE_URL = ${BASE_URL}`);
 } catch (e) {}
@@ -46,12 +53,22 @@ function createLoginWindow() {
         },
         autoHideMenuBar: true
     });
-    logToFile('[Widgetly] Creating window (login)');
-    loginWindow.loadFile(path.join(__dirname, 'login.html')).then(() => {
-        logToFile('[Widgetly] Renderer loaded (login.html)');
-        logToFile('[Widgetly] Production path being loaded: ' + path.join(__dirname, 'login.html'));
+    logToFile('[Widgetly] Creating BrowserWindow');
+    const rendererPath = path.join(__dirname, 'login.html');
+    logToFile('[Widgetly] Renderer path: ' + rendererPath);
+    logToFile('[Widgetly] Loading renderer');
+    
+    loginWindow.loadFile(rendererPath).then(() => {
+        logToFile('[Widgetly] Renderer loaded');
     }).catch(e => {
-        logToFile('[Widgetly] Renderer failed (login.html): ' + e.message);
+        logToFile('[Widgetly] Renderer load failed: ' + e.message);
+    });
+
+    loginWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+        logToFile(`[Widgetly] Renderer load failed (did-fail-load): ${errorDescription}`);
+    });
+    loginWindow.webContents.on('render-process-gone', (event, details) => {
+        logToFile(`[Widgetly] Main process error: renderer crashed - ${details.reason}`);
     });
     
     // Pass API URL to renderer
@@ -79,12 +96,23 @@ function createMainWindow() {
     });
 
     mainWindow.setIgnoreMouseEvents(true, { forward: true });
-    logToFile('[Widgetly] Creating window (main)');
-    mainWindow.loadFile(path.join(__dirname, 'index.html')).then(() => {
-        logToFile('[Widgetly] Renderer loaded (index.html)');
-        logToFile('[Widgetly] Production path being loaded: ' + path.join(__dirname, 'index.html'));
+    
+    logToFile('[Widgetly] Creating BrowserWindow');
+    const rendererPath = path.join(__dirname, 'index.html');
+    logToFile('[Widgetly] Renderer path: ' + rendererPath);
+    logToFile('[Widgetly] Loading renderer');
+    
+    mainWindow.loadFile(rendererPath).then(() => {
+        logToFile('[Widgetly] Renderer loaded');
     }).catch(e => {
-        logToFile('[Widgetly] Renderer failed (index.html): ' + e.message);
+        logToFile('[Widgetly] Renderer load failed: ' + e.message);
+    });
+
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+        logToFile(`[Widgetly] Renderer load failed (did-fail-load): ${errorDescription}`);
+    });
+    mainWindow.webContents.on('render-process-gone', (event, details) => {
+        logToFile(`[Widgetly] Main process error: renderer crashed - ${details.reason}`);
     });
 }
 
@@ -125,13 +153,12 @@ async function startSync() {
 
 app.whenReady().then(() => {
     logToFile('====================================');
+    logToFile('[Widgetly] App ready');
     logToFile('[Widgetly] Electron starting');
     const token = store.get('token');
     if (!token) {
-        logToFile('[Widgetly] No token found, opening login window');
         createLoginWindow();
     } else {
-        logToFile('[Widgetly] Token found, starting sync and main window');
         createMainWindow();
         startSync();
         syncInterval = setInterval(startSync, 5000); // Sync every 5 seconds
